@@ -493,7 +493,6 @@ class WebView extends React.Component {
     onMessage && onMessage(event);
 
     const data = this.decode(event.nativeEvent.data);
-    debugger;
     if (/^{/.test(data)) {
       this.setState({
         webViewHeight: JSON.parse(data)["height"]
