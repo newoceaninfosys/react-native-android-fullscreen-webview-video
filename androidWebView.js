@@ -22,6 +22,7 @@ const View = ReactNative.View;
 const ViewPropTypes = ReactNative.ViewPropTypes;
 const requireNativeComponent = ReactNative.requireNativeComponent;
 const resolveAssetSource = ReactNative.Image.resolveAssetSource;
+const dimensions = ReactNative.Dimensions;
 
 const RCT_WEBVIEW_REF = 'webview';
 
@@ -64,7 +65,9 @@ class WebView extends React.Component {
     onContentSizeChange: PropTypes.func,
     startInLoadingState: PropTypes.bool, // force WebView to show loadingView on first load
     style: ViewPropTypes.style,
-
+    defaultHeight: PropTypes.number,
+    messagingEnabled: PropTypes.bool,
+    
     /**
      * Loads static html or a uri (with optional headers) in the WebView.
      */
@@ -220,14 +223,21 @@ class WebView extends React.Component {
     javaScriptEnabled: true,
     thirdPartyCookiesEnabled: true,
     scalesPageToFit: true,
-    saveFormDataDisabled: false
+    saveFormDataDisabled: false,
+    webViewHeight: 200,
+    messagingEnabled: true
   };
 
-  state = {
-    viewState: WebViewState.IDLE,
-    lastErrorEvent: null,
-    startInLoadingState: true
-  };
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      viewState: WebViewState.IDLE,
+      lastErrorEvent: null,
+      startInLoadingState: true,
+      webViewHeight: props.defaultHeight
+    };
+  }
 
   UNSAFE_componentWillMount() {
     if (this.props.startInLoadingState) {
@@ -237,6 +247,10 @@ class WebView extends React.Component {
 
   render() {
     let otherView = null;
+    const _w = this.props.width || dimensions.get("window").width;
+    const _h = this.state.webViewHeight
+      ? this.state.webViewHeight
+      : this.props.defaultHeight;
 
     if (this.state.viewState === WebViewState.LOADING) {
       otherView = (this.props.renderLoading || defaultRenderLoading)();
@@ -251,7 +265,7 @@ class WebView extends React.Component {
         );
     } else if (this.state.viewState !== WebViewState.IDLE) {
       console.error(
-        'RCTWebView invalid state encountered: ' + this.state.loading
+        'RNCWebView invalid state encountered: ' + this.state.loading
       );
     }
 
@@ -281,21 +295,21 @@ class WebView extends React.Component {
 
     const nativeConfig = this.props.nativeConfig || {};
 
-    let NativeWebView = nativeConfig.component || RCTWebView;
+    let NativeWebView = nativeConfig.component || RNCWebView;
 
     const webView = (
       <NativeWebView
         ref={RCT_WEBVIEW_REF}
         key="webViewKey"
-        style={webViewStyles}
+        style={[webViewStyles, { width: _w }, this.props.style, { height: _h }]}
         source={resolveAssetSource(source)}
         scalesPageToFit={this.props.scalesPageToFit}
-        injectedJavaScript={this.props.injectedJavaScript}
+        injectedJavaScript={`const meta = document.createElement('meta'); meta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0'); meta.setAttribute('name', 'viewport'); document.getElementsByTagName('head')[0].appendChild(meta);`}
         userAgent={this.props.userAgent}
         javaScriptEnabled={this.props.javaScriptEnabled}
         thirdPartyCookiesEnabled={this.props.thirdPartyCookiesEnabled}
         domStorageEnabled={this.props.domStorageEnabled}
-        messagingEnabled={typeof this.props.onMessage === 'function'}
+        messagingEnabled={this.props.messagingEnabled}
         onMessage={this.onMessage}
         contentInset={this.props.contentInset}
         automaticallyAdjustContentInsets={
@@ -330,7 +344,7 @@ class WebView extends React.Component {
   goForward = () => {
     UIManager.dispatchViewManagerCommand(
       this.getWebViewHandle(),
-      UIManager.RCTWebView.Commands.goForward,
+      UIManager.getViewManagerConfig('RNCWebView').Commands.goForward,
       null
     );
   };
@@ -338,7 +352,7 @@ class WebView extends React.Component {
   goBack = () => {
     UIManager.dispatchViewManagerCommand(
       this.getWebViewHandle(),
-      UIManager.RCTWebView.Commands.goBack,
+      UIManager.getViewManagerConfig('RNCWebView').Commands.goBack,
       null
     );
   };
@@ -349,7 +363,7 @@ class WebView extends React.Component {
     });
     UIManager.dispatchViewManagerCommand(
       this.getWebViewHandle(),
-      UIManager.RCTWebView.Commands.reload,
+      UIManager.getViewManagerConfig('RNCWebView').Commands.reload,
       null
     );
   };
@@ -357,7 +371,7 @@ class WebView extends React.Component {
   stopLoading = () => {
     UIManager.dispatchViewManagerCommand(
       this.getWebViewHandle(),
-      UIManager.RCTWebView.Commands.stopLoading,
+      UIManager.getViewManagerConfig('RNCWebView').Commands.stopLoading,
       null
     );
   };
@@ -365,7 +379,7 @@ class WebView extends React.Component {
   postMessage = data => {
     UIManager.dispatchViewManagerCommand(
       this.getWebViewHandle(),
-      UIManager.RCTWebView.Commands.postMessage,
+      UIManager.getViewManagerConfig('RNCWebView').Commands.postMessage,
       [String(data)]
     );
   };
@@ -379,7 +393,7 @@ class WebView extends React.Component {
   injectJavaScript = data => {
     UIManager.dispatchViewManagerCommand(
       this.getWebViewHandle(),
-      UIManager.RCTWebView.Commands.injectJavaScript,
+      UIManager.getViewManagerConfig('RNCWebView').Commands.injectJavaScript,
       [data]
     );
   };
@@ -425,15 +439,70 @@ class WebView extends React.Component {
       viewState: WebViewState.IDLE
     });
     this.updateNavigationState(event);
+    // Minify JS: https://smallseotools.com/minify-js/
+    // Source code
+    /*
+    (function() {
+        try {
+            var count = 0;
+            function checkHeight() {
+                var height = 0;
+                if (document.documentElement.clientHeight > document.body.clientHeight) {
+                    height = document.documentElement.clientHeight
+                } else {
+                    height = document.body.clientHeight
+                }
+                window.postMessage(JSON.stringify({
+                    height
+                }));
+
+                count++;
+
+                if (count < 5) {
+                    setTimeout(function() {
+                        checkHeight();
+                    }, 800);
+                }
+            }
+
+            checkHeight();
+
+        } catch (e) {
+            window.postMessage(JSON.stringify(e.message));
+        }
+    })();
+    */
+    this.injectJavaScript(`(function(){try{var count=0;function checkHeight(){var height=0;if(document.documentElement.clientHeight>document.body.clientHeight){height=document.documentElement.clientHeight}else{height=document.body.clientHeight}window.postMessage(JSON.stringify({height}));count++;if(count<10){setTimeout(function(){checkHeight()},800)}}checkHeight()}catch(e){window.postMessage(JSON.stringify(e.message))}})();`);
+  };
+
+  decode = input => {
+    let output = input;
+    for (let i = 0; i < 5; i++) {
+      output = decodeURI(output);
+    }
+
+    for (let i = 0; i < 5; i++) {
+      output = decodeURIComponent(output);
+    }
+
+    return output;
   };
 
   onMessage = (event: Event) => {
     const { onMessage } = this.props;
     onMessage && onMessage(event);
+
+    const data = this.decode(event.nativeEvent.data);
+    debugger;
+    if (/^{/.test(data)) {
+      this.setState({
+        webViewHeight: JSON.parse(data)["height"]
+      });
+    }
   };
 }
 
-const RCTWebView = requireNativeComponent(
+const RNCWebView = requireNativeComponent(
   'RNCustomWebView',
   WebView,
   WebView.extraNativeComponentConfig
