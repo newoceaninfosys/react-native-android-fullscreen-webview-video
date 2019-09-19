@@ -314,7 +314,9 @@ public class CustomWebViewManager extends SimpleViewManager<WebView> {
         }
 
         public void onMessage(String message) {
-            dispatchEvent(this, new TopMessageEvent(this.getId(), message));
+            WritableMap data = Arguments.createMap();
+            data.putString("data", message);
+            dispatchEvent(this, new TopMessageEvent(this.getId(), data));
         }
 
         protected void cleanupCallbacksAndDestroy() {
